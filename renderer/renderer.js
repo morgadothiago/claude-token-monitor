@@ -24,9 +24,14 @@ const CATEGORY_LABELS = {
   cacheRead: 'Cache read',
 };
 
+const UW_LIMIT_KEY = 'ctm_usage_window_limit';
+const UW_HOURS_KEY = 'ctm_usage_window_hours';
+const UW_DEFAULT_HOURS = 5;
+
 let state = {
   sessions: [],
   totals: null,
+  timeline: [],
   sortKey: 'total',
   sortDir: 'desc',
   filterText: '',
@@ -75,6 +80,7 @@ async function loadData() {
     const result = await window.tokenMonitorAPI.scanSessions();
     state.sessions = result.sessions;
     state.totals = result.totals;
+    state.timeline = result.timeline || [];
     renderAll(result.scannedAt);
   } catch (err) {
     console.error('Failed to scan sessions:', err);
@@ -97,6 +103,115 @@ function renderAll(scannedAt) {
   renderSessionsChart();
   renderCategoriesChart();
   renderTable();
+  renderUsageWindow();
+}
+
+// ---------- Usage window (local, user-configured estimate) ----------
+//
+// There is no public Anthropic API to query the real Pro/Max plan limit or
+// its reset time, so we never invent one. Instead the user tells us their
+// own known limit + window duration, and we compute, from local history
+// only, how much was used inside that rolling window right now, plus when
+// the oldest usage in the window will age out of it.
+
+function loadUsageWindowSettings() {
+  let limit = null;
+  let hours = UW_DEFAULT_HOURS;
+  try {
+    const storedLimit = localStorage.getItem(UW_LIMIT_KEY);
+    const storedHours = localStorage.getItem(UW_HOURS_KEY);
+    if (storedLimit !== null && storedLimit !== '') limit = Number(storedLimit);
+    if (storedHours !== null && storedHours !== '') hours = Number(storedHours);
+  } catch {
+    // localStorage unavailable (private mode, etc.) - fall back to defaults.
+  }
+  if (!Number.isFinite(limit) || limit <= 0) limit = null;
+  if (!Number.isFinite(hours) || hours <= 0) hours = UW_DEFAULT_HOURS;
+  return { limit, hours };
+}
+
+function saveUsageWindowSettings(limit, hours) {
+  try {
+    if (limit === null) {
+      localStorage.removeItem(UW_LIMIT_KEY);
+    } else {
+      localStorage.setItem(UW_LIMIT_KEY, String(limit));
+    }
+    localStorage.setItem(UW_HOURS_KEY, String(hours));
+  } catch {
+    // Ignore - worst case settings just don't persist across restarts.
+  }
+}
+
+function renderUsageWindow() {
+  const { limit, hours } = loadUsageWindowSettings();
+
+  const limitInput = document.getElementById('uw-limit');
+  const hoursInput = document.getElementById('uw-hours');
+  if (document.activeElement !== limitInput) {
+    limitInput.value = limit === null ? '' : String(limit);
+  }
+  if (document.activeElement !== hoursInput) {
+    hoursInput.value = String(hours);
+  }
+
+  const fill = document.getElementById('uw-bar-fill');
+  const label = document.getElementById('uw-bar-label');
+  const resetEl = document.getElementById('uw-reset');
+
+  const windowMs = hours * 60 * 60 * 1000;
+  const now = Date.now();
+  const cutoff = now - windowMs;
+  const inWindow = state.timeline.filter((b) => b.t >= cutoff);
+  const used = inWindow.reduce((sum, b) => sum + b.total, 0);
+
+  fill.classList.remove('is-warning', 'is-danger');
+
+  if (limit === null) {
+    fill.style.width = used > 0 ? '100%' : '0%';
+    fill.style.background = 'var(--border)';
+    label.textContent = used > 0
+      ? `${formatNumber(used)} tokens usados nas últimas ${hours}h (defina um limite acima para ver %)`
+      : 'Configure o limite acima para ativar a barra';
+  } else {
+    const pct = Math.min(100, (used / limit) * 100);
+    fill.style.width = `${pct.toFixed(1)}%`;
+    fill.style.background = '';
+    if (pct >= 90) fill.classList.add('is-danger');
+    else if (pct >= 70) fill.classList.add('is-warning');
+    label.textContent = `${formatNumber(used)} / ${formatNumber(limit)} tokens (${pct.toFixed(1)}%) nas últimas ${hours}h`;
+  }
+
+  if (inWindow.length === 0) {
+    resetEl.textContent = `Nenhum uso registrado nas últimas ${hours}h.`;
+  } else {
+    const oldest = inWindow.reduce((min, b) => (b.t < min.t ? b : min), inWindow[0]);
+    const agesOutAt = oldest.t + windowMs;
+    resetEl.textContent = `A partir de ${formatDate(agesOutAt)}, o uso mais antigo dessa janela sai do cálculo (estimativa aproximada baseada só no seu histórico local — a janela é deslizante, não um reset único).`;
+  }
+}
+
+function wireUsageWindowEvents() {
+  const limitInput = document.getElementById('uw-limit');
+  const hoursInput = document.getElementById('uw-hours');
+
+  const onChange = () => {
+    const rawLimit = limitInput.value.trim();
+    const rawHours = hoursInput.value.trim();
+    const limit = rawLimit === '' ? null : Number(rawLimit);
+    const hours = rawHours === '' ? UW_DEFAULT_HOURS : Number(rawHours);
+    saveUsageWindowSettings(
+      Number.isFinite(limit) && limit > 0 ? limit : null,
+      Number.isFinite(hours) && hours > 0 ? hours : UW_DEFAULT_HOURS
+    );
+    renderUsageWindow();
+  };
+
+  limitInput.addEventListener('input', onChange);
+  hoursInput.addEventListener('input', onChange);
+
+  // Keep the rolling window fresh even without a rescan, since "now" moves.
+  setInterval(renderUsageWindow, 30_000);
 }
 
 function renderScannedAt(scannedAt) {
@@ -381,4 +496,5 @@ function wireEvents() {
 }
 
 wireEvents();
+wireUsageWindowEvents();
 loadData();

@@ -124,6 +124,115 @@ html, body {
   margin: 0 auto;
 }
 
+.usage-window {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 18px 20px;
+  margin-bottom: 20px;
+}
+
+.usage-window__header h2 {
+  margin: 0 0 4px 0;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.usage-window__badge {
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--accent);
+  background: rgba(124, 156, 255, 0.14);
+  border: 1px solid rgba(124, 156, 255, 0.35);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+
+.usage-window__header p {
+  margin: 0 0 14px 0;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  max-width: 720px;
+  line-height: 1.5;
+}
+
+.usage-window__controls {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.usage-window__controls label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.usage-window__controls input {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+  width: 190px;
+}
+
+.usage-window__controls input:focus {
+  outline: 1px solid var(--accent);
+}
+
+.usage-window__bar-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.usage-window__bar-track {
+  flex: 1 1 auto;
+  height: 14px;
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.usage-window__bar-fill {
+  height: 100%;
+  width: 0%;
+  border-radius: 999px;
+  background: var(--accent-strong);
+  transition: width 0.3s ease, background 0.3s ease;
+}
+
+.usage-window__bar-fill.is-warning {
+  background: #f6ad55;
+}
+
+.usage-window__bar-fill.is-danger {
+  background: #f56565;
+}
+
+.usage-window__bar-label {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+.usage-window__reset {
+  margin: 10px 0 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
 .summary-cards {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

@@ -22,6 +22,39 @@
   </header>
 
   <main id="app-main">
+    <section class="usage-window" id="usage-window">
+      <div class="usage-window__header">
+        <div>
+          <h2>Janela de uso <span class="usage-window__badge">estimativa local</span></h2>
+          <p>
+            Baseada no limite e na duração que <strong>você</strong> configurar abaixo.
+            Não existe API pública da Anthropic para consultar o limite real do seu
+            plano — este número nunca é inventado pelo app.
+          </p>
+        </div>
+      </div>
+
+      <div class="usage-window__controls">
+        <label>
+          Limite de tokens na janela
+          <input id="uw-limit" type="number" min="0" step="1000" placeholder="ex: 900000" />
+        </label>
+        <label>
+          Duração da janela (horas)
+          <input id="uw-hours" type="number" min="1" max="72" step="1" placeholder="ex: 5" />
+        </label>
+      </div>
+
+      <div class="usage-window__bar-wrap">
+        <div class="usage-window__bar-track">
+          <div class="usage-window__bar-fill" id="uw-bar-fill"></div>
+        </div>
+        <span class="usage-window__bar-label" id="uw-bar-label">Configure o limite acima para ativar a barra</span>
+      </div>
+
+      <p class="usage-window__reset" id="uw-reset"></p>
+    </section>
+
     <section class="summary-cards" id="summary-cards">
       <div class="card">
         <span class="card__label">Total de tokens</span>
