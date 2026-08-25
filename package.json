@@ -1,6 +1,6 @@
 {
   "name": "claude-token-monitor",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Monitor de consumo de tokens das sessões do Claude Code, com graficos de pizza por sessao e por categoria de token.",
   "main": "main.js",
   "private": true,
