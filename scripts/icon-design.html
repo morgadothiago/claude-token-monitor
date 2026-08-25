@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 1024px;
+    height: 1024px;
+    background: transparent;
+  }
+  svg { display: block; }
+</style>
+</head>
+<body>
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#20263a"/>
+      <stop offset="100%" stop-color="#0f1115"/>
+    </linearGradient>
+    <linearGradient id="ringShine" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.10"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <!-- macOS Big Sur style squircle background -->
+  <rect x="64" y="64" width="896" height="896" rx="200" ry="200" fill="url(#bg)"/>
+  <rect x="64" y="64" width="896" height="896" rx="200" ry="200" fill="url(#ringShine)"/>
+
+  <!-- Donut chart, 4 equal slices matching the app's category colors -->
+  <g transform="translate(512,512)">
+    <!-- slice 1: input (blue) 0deg -> 90deg -->
+    <path d="M 0 -260 A 260 260 0 0 1 260 0 L 130 0 A 130 130 0 0 0 0 -130 Z" fill="#7c9cff"/>
+    <!-- slice 2: output (teal) 90deg -> 180deg -->
+    <path d="M 260 0 A 260 260 0 0 1 0 260 L 0 130 A 130 130 0 0 0 130 0 Z" fill="#4fd1c5"/>
+    <!-- slice 3: cache creation (orange) 180deg -> 270deg -->
+    <path d="M 0 260 A 260 260 0 0 1 -260 0 L -130 0 A 130 130 0 0 0 0 130 Z" fill="#f6ad55"/>
+    <!-- slice 4: cache read (purple) 270deg -> 360deg -->
+    <path d="M -260 0 A 260 260 0 0 1 0 -260 L 0 -130 A 130 130 0 0 0 -130 0 Z" fill="#b794f4"/>
+
+    <!-- thin separators so slices read distinctly at small sizes -->
+    <g stroke="#171a21" stroke-width="6" stroke-linecap="round">
+      <line x1="0" y1="-130" x2="0" y2="-260"/>
+      <line x1="130" y1="0" x2="260" y2="0"/>
+      <line x1="0" y1="130" x2="0" y2="260"/>
+      <line x1="-130" y1="0" x2="-260" y2="0"/>
+    </g>
+
+    <!-- center hole to read as a donut chart -->
+    <circle cx="0" cy="0" r="118" fill="#171a21"/>
+    <circle cx="0" cy="0" r="118" fill="none" stroke="#2a2f3a" stroke-width="4"/>
+  </g>
+</svg>
+</body>
+</html>

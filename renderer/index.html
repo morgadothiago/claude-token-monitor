@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none';" />
+  <title>Claude Token Monitor</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="app-header">
+    <div class="app-header__title">
+      <h1>Claude Token Monitor</h1>
+      <p>Consumo histórico de tokens das sessões do Claude Code (local, offline)</p>
+    </div>
+    <div class="app-header__actions">
+      <span id="scanned-at" class="scanned-at"></span>
+      <button id="refresh-btn" class="btn btn--primary">
+        <span class="btn__icon">&#8635;</span> Atualizar
+      </button>
+    </div>
+  </header>
+
+  <main id="app-main">
+    <section class="summary-cards" id="summary-cards">
+      <div class="card">
+        <span class="card__label">Total de tokens</span>
+        <span class="card__value" id="summary-total">-</span>
+      </div>
+      <div class="card">
+        <span class="card__label">Sessões</span>
+        <span class="card__value" id="summary-sessions">-</span>
+      </div>
+      <div class="card">
+        <span class="card__label">Projetos</span>
+        <span class="card__value" id="summary-projects">-</span>
+      </div>
+      <div class="card">
+        <span class="card__label">Cache read (mais barato)</span>
+        <span class="card__value" id="summary-cache-read">-</span>
+      </div>
+    </section>
+
+    <section class="charts-grid">
+      <div class="chart-panel">
+        <div class="chart-panel__header">
+          <h2>Tokens por sessão</h2>
+          <p>Top sessões por consumo total, demais agrupadas em "Outras"</p>
+        </div>
+        <div class="chart-panel__body">
+          <div class="chart-canvas-wrap">
+            <canvas id="chart-sessions"></canvas>
+          </div>
+          <ul class="legend" id="legend-sessions"></ul>
+        </div>
+      </div>
+
+      <div class="chart-panel">
+        <div class="chart-panel__header">
+          <h2>Tokens por categoria</h2>
+          <p>Distribuição global entre input, output e cache</p>
+        </div>
+        <div class="chart-panel__body">
+          <div class="chart-canvas-wrap">
+            <canvas id="chart-categories"></canvas>
+          </div>
+          <ul class="legend" id="legend-categories"></ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="table-section">
+      <div class="table-section__header">
+        <h2>Todas as sessões</h2>
+        <input id="table-filter" type="text" placeholder="Filtrar por projeto ou sessão..." />
+      </div>
+      <div class="table-wrap">
+        <table id="sessions-table">
+          <thead>
+            <tr>
+              <th data-sort="projectName">Projeto</th>
+              <th data-sort="sessionId">Sessão</th>
+              <th data-sort="lastActivity">Última atividade</th>
+              <th data-sort="input">Input</th>
+              <th data-sort="output">Output</th>
+              <th data-sort="cacheCreation">Cache creation</th>
+              <th data-sort="cacheRead">Cache read</th>
+              <th data-sort="total">Total</th>
+            </tr>
+          </thead>
+          <tbody id="sessions-tbody"></tbody>
+        </table>
+      </div>
+      <p id="empty-state" class="empty-state" hidden>
+        Nenhuma sessão encontrada em <code>~/.claude/projects</code>.
+      </p>
+    </section>
+
+    <div id="loading-overlay" class="loading-overlay">
+      <div class="spinner"></div>
+      <span>Lendo sessões do Claude Code...</span>
+    </div>
+  </main>
+
+  <script src="chart.umd.js"></script>
+  <script src="renderer.js"></script>
+</body>
+</html>
