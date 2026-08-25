@@ -35,8 +35,24 @@ visualização de consumo histórico local.
   via `contextBridge.exposeInMainWorld('tokenMonitorAPI', { scanSessions })`.
 - **Renderer** (`renderer/`): vanilla JS + Chart.js (instalado via npm e copiado para
   `renderer/chart.umd.js` no `postinstall`, sem CDN) para os dois gráficos de pizza,
-  além da tabela e dos cards de resumo.
+  além da tabela e dos cards de resumo. Tipografia (Fraunces, Inter, JetBrains Mono)
+  também é instalada via npm (`@fontsource/*`) e copiada para `renderer/fonts/` no
+  `postinstall` — sem Google Fonts, sem CDN, funciona 100% offline.
 
 Segurança: `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`,
 CSP restritiva (`script-src 'self'`) no `index.html`, e navegação/pop-ups bloqueados
 no main process.
+
+## Empacotar (build para distribuição)
+
+```bash
+npm run dist:mac    # dmg + zip, arm64 + x64
+npm run dist:linux  # AppImage
+npm run dist:win    # instalador NSIS
+npm run dist        # os três de uma vez
+```
+
+Os instaladores saem em `dist/` (pastas `*-unpacked` são apenas estágio
+intermediário do `electron-builder`, não são o artefato final). Ícone próprio em
+`build/icon.icns` / `.ico` / `.png`, gerado a partir de `scripts/icon-design.html`
+via `scripts/generate-icon.js` + `scripts/build-ico.js`.

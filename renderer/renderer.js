@@ -2,7 +2,7 @@
 
 /* global Chart */
 
-const TOP_N_SESSIONS = 8;
+const TOP_N_PROJECTS = 8;
 
 const PIE_COLORS = [
   '#7c9cff', '#4fd1c5', '#f6ad55', '#b794f4',
@@ -24,18 +24,55 @@ const CATEGORY_LABELS = {
   cacheRead: 'Cache read',
 };
 
-const UW_LIMIT_KEY = 'ctm_usage_window_limit';
-const UW_HOURS_KEY = 'ctm_usage_window_hours';
-const UW_DEFAULT_HOURS = 5;
-
 let state = {
   sessions: [],
-  totals: null,
-  timeline: [],
   sortKey: 'total',
   sortDir: 'desc',
   filterText: '',
+  period: 'all',
 };
+
+const PERIOD_MS = {
+  '24h': 24 * 60 * 60 * 1000,
+  '7d': 7 * 24 * 60 * 60 * 1000,
+  '30d': 30 * 24 * 60 * 60 * 1000,
+};
+
+// Sessions whose last activity falls inside the currently selected period.
+// This is what "current projects" means in the UI: filtering by this scopes
+// every card, chart and table row to only the work happening in that window.
+function getVisibleSessions() {
+  const { period, sessions } = state;
+  if (period === 'all') return sessions;
+
+  const now = Date.now();
+
+  if (period === 'today') {
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const cutoff = startOfToday.getTime();
+    return sessions.filter((s) => s.lastActivity && s.lastActivity >= cutoff);
+  }
+
+  const windowMs = PERIOD_MS[period];
+  if (!windowMs) return sessions;
+  const cutoff = now - windowMs;
+  return sessions.filter((s) => s.lastActivity && s.lastActivity >= cutoff);
+}
+
+function computeTotals(sessions) {
+  return sessions.reduce(
+    (acc, s) => {
+      acc.input += s.input;
+      acc.output += s.output;
+      acc.cacheCreation += s.cacheCreation;
+      acc.cacheRead += s.cacheRead;
+      acc.total += s.total;
+      return acc;
+    },
+    { input: 0, output: 0, cacheCreation: 0, cacheRead: 0, total: 0 }
+  );
+}
 
 let sessionsChart = null;
 let categoriesChart = null;
@@ -79,8 +116,6 @@ async function loadData() {
   try {
     const result = await window.tokenMonitorAPI.scanSessions();
     state.sessions = result.sessions;
-    state.totals = result.totals;
-    state.timeline = result.timeline || [];
     renderAll(result.scannedAt);
   } catch (err) {
     console.error('Failed to scan sessions:', err);
@@ -103,115 +138,6 @@ function renderAll(scannedAt) {
   renderSessionsChart();
   renderCategoriesChart();
   renderTable();
-  renderUsageWindow();
-}
-
-// ---------- Usage window (local, user-configured estimate) ----------
-//
-// There is no public Anthropic API to query the real Pro/Max plan limit or
-// its reset time, so we never invent one. Instead the user tells us their
-// own known limit + window duration, and we compute, from local history
-// only, how much was used inside that rolling window right now, plus when
-// the oldest usage in the window will age out of it.
-
-function loadUsageWindowSettings() {
-  let limit = null;
-  let hours = UW_DEFAULT_HOURS;
-  try {
-    const storedLimit = localStorage.getItem(UW_LIMIT_KEY);
-    const storedHours = localStorage.getItem(UW_HOURS_KEY);
-    if (storedLimit !== null && storedLimit !== '') limit = Number(storedLimit);
-    if (storedHours !== null && storedHours !== '') hours = Number(storedHours);
-  } catch {
-    // localStorage unavailable (private mode, etc.) - fall back to defaults.
-  }
-  if (!Number.isFinite(limit) || limit <= 0) limit = null;
-  if (!Number.isFinite(hours) || hours <= 0) hours = UW_DEFAULT_HOURS;
-  return { limit, hours };
-}
-
-function saveUsageWindowSettings(limit, hours) {
-  try {
-    if (limit === null) {
-      localStorage.removeItem(UW_LIMIT_KEY);
-    } else {
-      localStorage.setItem(UW_LIMIT_KEY, String(limit));
-    }
-    localStorage.setItem(UW_HOURS_KEY, String(hours));
-  } catch {
-    // Ignore - worst case settings just don't persist across restarts.
-  }
-}
-
-function renderUsageWindow() {
-  const { limit, hours } = loadUsageWindowSettings();
-
-  const limitInput = document.getElementById('uw-limit');
-  const hoursInput = document.getElementById('uw-hours');
-  if (document.activeElement !== limitInput) {
-    limitInput.value = limit === null ? '' : String(limit);
-  }
-  if (document.activeElement !== hoursInput) {
-    hoursInput.value = String(hours);
-  }
-
-  const fill = document.getElementById('uw-bar-fill');
-  const label = document.getElementById('uw-bar-label');
-  const resetEl = document.getElementById('uw-reset');
-
-  const windowMs = hours * 60 * 60 * 1000;
-  const now = Date.now();
-  const cutoff = now - windowMs;
-  const inWindow = state.timeline.filter((b) => b.t >= cutoff);
-  const used = inWindow.reduce((sum, b) => sum + b.total, 0);
-
-  fill.classList.remove('is-warning', 'is-danger');
-
-  if (limit === null) {
-    fill.style.width = used > 0 ? '100%' : '0%';
-    fill.style.background = 'var(--border)';
-    label.textContent = used > 0
-      ? `${formatNumber(used)} tokens usados nas últimas ${hours}h (defina um limite acima para ver %)`
-      : 'Configure o limite acima para ativar a barra';
-  } else {
-    const pct = Math.min(100, (used / limit) * 100);
-    fill.style.width = `${pct.toFixed(1)}%`;
-    fill.style.background = '';
-    if (pct >= 90) fill.classList.add('is-danger');
-    else if (pct >= 70) fill.classList.add('is-warning');
-    label.textContent = `${formatNumber(used)} / ${formatNumber(limit)} tokens (${pct.toFixed(1)}%) nas últimas ${hours}h`;
-  }
-
-  if (inWindow.length === 0) {
-    resetEl.textContent = `Nenhum uso registrado nas últimas ${hours}h.`;
-  } else {
-    const oldest = inWindow.reduce((min, b) => (b.t < min.t ? b : min), inWindow[0]);
-    const agesOutAt = oldest.t + windowMs;
-    resetEl.textContent = `A partir de ${formatDate(agesOutAt)}, o uso mais antigo dessa janela sai do cálculo (estimativa aproximada baseada só no seu histórico local — a janela é deslizante, não um reset único).`;
-  }
-}
-
-function wireUsageWindowEvents() {
-  const limitInput = document.getElementById('uw-limit');
-  const hoursInput = document.getElementById('uw-hours');
-
-  const onChange = () => {
-    const rawLimit = limitInput.value.trim();
-    const rawHours = hoursInput.value.trim();
-    const limit = rawLimit === '' ? null : Number(rawLimit);
-    const hours = rawHours === '' ? UW_DEFAULT_HOURS : Number(rawHours);
-    saveUsageWindowSettings(
-      Number.isFinite(limit) && limit > 0 ? limit : null,
-      Number.isFinite(hours) && hours > 0 ? hours : UW_DEFAULT_HOURS
-    );
-    renderUsageWindow();
-  };
-
-  limitInput.addEventListener('input', onChange);
-  hoursInput.addEventListener('input', onChange);
-
-  // Keep the rolling window fresh even without a rescan, since "now" moves.
-  setInterval(renderUsageWindow, 30_000);
 }
 
 function renderScannedAt(scannedAt) {
@@ -220,50 +146,89 @@ function renderScannedAt(scannedAt) {
 }
 
 function renderSummaryCards() {
-  const { sessions, totals } = state;
-  document.getElementById('summary-total').textContent = totals ? formatNumber(totals.total) : '-';
+  const sessions = getVisibleSessions();
+  const totals = computeTotals(sessions);
+  document.getElementById('summary-total').textContent = formatNumber(totals.total);
   document.getElementById('summary-sessions').textContent = String(sessions.length);
   const uniqueProjects = new Set(sessions.map((s) => s.projectName || s.cwd || 'desconhecido'));
   document.getElementById('summary-projects').textContent = String(uniqueProjects.size);
-  document.getElementById('summary-cache-read').textContent = totals ? formatNumber(totals.cacheRead) : '-';
+  document.getElementById('summary-cache-read').textContent = formatNumber(totals.cacheRead);
+}
+
+// Groups sessions by project (cwd wins as the dedup key when present, since
+// two different paths can share a folder basename) so every current project
+// always shows up as its own slice/row instead of fragmenting into one
+// sliver per session or getting buried inside "Outras".
+function aggregateByProject(sessions) {
+  const map = new Map();
+
+  for (const s of sessions) {
+    const key = s.cwd || `name:${s.projectName}`;
+    let proj = map.get(key);
+    if (!proj) {
+      proj = {
+        projectName: s.projectName,
+        cwd: s.cwd,
+        sessionCount: 0,
+        lastActivity: null,
+        input: 0,
+        output: 0,
+        cacheCreation: 0,
+        cacheRead: 0,
+        total: 0,
+      };
+      map.set(key, proj);
+    }
+    proj.sessionCount += 1;
+    proj.input += s.input;
+    proj.output += s.output;
+    proj.cacheCreation += s.cacheCreation;
+    proj.cacheRead += s.cacheRead;
+    proj.total += s.total;
+    if (s.lastActivity && (proj.lastActivity === null || s.lastActivity > proj.lastActivity)) {
+      proj.lastActivity = s.lastActivity;
+    }
+  }
+
+  return Array.from(map.values()).sort((a, b) => b.total - a.total);
 }
 
 function renderSessionsChart() {
   const canvas = document.getElementById('chart-sessions');
   const legendEl = document.getElementById('legend-sessions');
-  const sessions = state.sessions;
+  const projects = aggregateByProject(getVisibleSessions());
 
-  if (!sessions.length) {
+  if (!projects.length) {
     destroyChart('sessions');
     legendEl.innerHTML = '';
     return;
   }
 
-  const top = sessions.slice(0, TOP_N_SESSIONS);
-  const rest = sessions.slice(TOP_N_SESSIONS);
-  const otherTotal = rest.reduce((sum, s) => sum + s.total, 0);
+  const top = projects.slice(0, TOP_N_PROJECTS);
+  const rest = projects.slice(TOP_N_PROJECTS);
+  const otherTotal = rest.reduce((sum, p) => sum + p.total, 0);
 
-  const labels = top.map((s) => `${s.projectName} (${shortId(s.sessionId)})`);
-  const values = top.map((s) => s.total);
+  const labels = top.map((p) => p.projectName);
+  const values = top.map((p) => p.total);
   const colors = top.map((_, i) => PIE_COLORS[i % PIE_COLORS.length]);
 
   if (otherTotal > 0) {
-    labels.push(`Outras (${rest.length} sessões)`);
+    labels.push(`Outros (${rest.length} projetos)`);
     values.push(otherTotal);
     colors.push(OTHER_COLOR);
   }
 
   sessionsChart = upsertPieChart(canvas, sessionsChart, labels, values, colors);
 
-  const legendItems = top.map((s, i) => ({
+  const legendItems = top.map((p, i) => ({
     color: colors[i],
-    main: `${s.projectName}`,
-    sub: `${shortId(s.sessionId)} · ${formatNumber(s.total)} tokens`,
+    main: p.projectName,
+    sub: `${p.sessionCount} sessão${p.sessionCount === 1 ? '' : 'ões'} · ${formatNumber(p.total)} tokens`,
   }));
   if (otherTotal > 0) {
     legendItems.push({
       color: OTHER_COLOR,
-      main: `Outras (${rest.length} sessões)`,
+      main: `Outros (${rest.length} projetos)`,
       sub: `${formatNumber(otherTotal)} tokens`,
     });
   }
@@ -273,9 +238,9 @@ function renderSessionsChart() {
 function renderCategoriesChart() {
   const canvas = document.getElementById('chart-categories');
   const legendEl = document.getElementById('legend-categories');
-  const totals = state.totals;
+  const totals = computeTotals(getVisibleSessions());
 
-  if (!totals || totals.total === 0) {
+  if (totals.total === 0) {
     destroyChart('categories');
     legendEl.innerHTML = '';
     return;
@@ -384,7 +349,7 @@ function renderLegend(container, items) {
 
 function getFilteredSortedSessions() {
   const filter = state.filterText.trim().toLowerCase();
-  let list = state.sessions;
+  let list = getVisibleSessions();
 
   if (filter) {
     list = list.filter((s) => {
@@ -422,6 +387,9 @@ function renderTable() {
   tbody.innerHTML = '';
 
   if (!list.length) {
+    emptyState.textContent = state.sessions.length
+      ? 'Nenhuma sessão no período/filtro selecionado.'
+      : 'Nenhuma sessão encontrada em ~/.claude/projects.';
     emptyState.hidden = false;
     updateSortHeaders();
     return;
@@ -493,8 +461,20 @@ function wireEvents() {
       renderTable();
     });
   });
+
+  document.querySelectorAll('.period-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.period = btn.dataset.period;
+      document.querySelectorAll('.period-btn').forEach((b) => {
+        b.classList.toggle('is-active', b === btn);
+      });
+      renderSummaryCards();
+      renderSessionsChart();
+      renderCategoriesChart();
+      renderTable();
+    });
+  });
 }
 
 wireEvents();
-wireUsageWindowEvents();
 loadData();

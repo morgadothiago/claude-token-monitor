@@ -11,7 +11,7 @@
   <header class="app-header">
     <div class="app-header__title">
       <h1>Claude Token Monitor</h1>
-      <p>Consumo histórico de tokens das sessões do Claude Code (local, offline)</p>
+      <p>Direto dos seus registros locais — nada sai desta máquina.</p>
     </div>
     <div class="app-header__actions">
       <span id="scanned-at" class="scanned-at"></span>
@@ -22,38 +22,16 @@
   </header>
 
   <main id="app-main">
-    <section class="usage-window" id="usage-window">
-      <div class="usage-window__header">
-        <div>
-          <h2>Janela de uso <span class="usage-window__badge">estimativa local</span></h2>
-          <p>
-            Baseada no limite e na duração que <strong>você</strong> configurar abaixo.
-            Não existe API pública da Anthropic para consultar o limite real do seu
-            plano — este número nunca é inventado pelo app.
-          </p>
-        </div>
+    <div class="period-toolbar">
+      <span class="period-toolbar__label">Período</span>
+      <div class="period-toolbar__options" id="period-filter" role="tablist">
+        <button type="button" class="period-btn is-active" data-period="all">Todos</button>
+        <button type="button" class="period-btn" data-period="today">Hoje</button>
+        <button type="button" class="period-btn" data-period="24h">24h</button>
+        <button type="button" class="period-btn" data-period="7d">7 dias</button>
+        <button type="button" class="period-btn" data-period="30d">30 dias</button>
       </div>
-
-      <div class="usage-window__controls">
-        <label>
-          Limite de tokens na janela
-          <input id="uw-limit" type="number" min="0" step="1000" placeholder="ex: 900000" />
-        </label>
-        <label>
-          Duração da janela (horas)
-          <input id="uw-hours" type="number" min="1" max="72" step="1" placeholder="ex: 5" />
-        </label>
-      </div>
-
-      <div class="usage-window__bar-wrap">
-        <div class="usage-window__bar-track">
-          <div class="usage-window__bar-fill" id="uw-bar-fill"></div>
-        </div>
-        <span class="usage-window__bar-label" id="uw-bar-label">Configure o limite acima para ativar a barra</span>
-      </div>
-
-      <p class="usage-window__reset" id="uw-reset"></p>
-    </section>
+    </div>
 
     <section class="summary-cards" id="summary-cards">
       <div class="card">
@@ -77,8 +55,8 @@
     <section class="charts-grid">
       <div class="chart-panel">
         <div class="chart-panel__header">
-          <h2>Tokens por sessão</h2>
-          <p>Top sessões por consumo total, demais agrupadas em "Outras"</p>
+          <h2>Tokens por projeto</h2>
+          <p>Todos os projetos atuais, somando todas as sessões de cada um</p>
         </div>
         <div class="chart-panel__body">
           <div class="chart-canvas-wrap">

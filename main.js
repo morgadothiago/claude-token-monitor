@@ -8,13 +8,6 @@ const readline = require('readline');
 
 const CLAUDE_PROJECTS_DIR = path.join(os.homedir(), '.claude', 'projects');
 
-// Only kept for the "usage window" progress bar (rolling-window estimate the
-// renderer builds from a user-configured limit/duration — see README). We
-// never fetch or guess any official Anthropic quota; this is just recent
-// history bucketed finely enough to compute a rolling sum locally.
-const TIMELINE_WINDOW_MS = 72 * 60 * 60 * 1000; // keep last 72h of buckets
-const TIMELINE_BUCKET_MS = 5 * 60 * 1000; // 5-minute resolution
-
 /**
  * Recursively lists all .jsonl files under a directory.
  * Uses async fs to avoid blocking the main process on large trees.
@@ -68,7 +61,7 @@ function projectNameFromCwd(cwd) {
  * usage into the sessions map. Malformed lines are skipped silently since
  * Claude Code session files can contain partial/truncated trailing lines.
  */
-async function processJsonlFile(filePath, projectSlug, sessionsMap, bucketsMap, cutoffMs) {
+async function processJsonlFile(filePath, projectSlug, sessionsMap) {
   const fileStream = fs.createReadStream(filePath, { encoding: 'utf8' });
   const rl = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
 
@@ -110,14 +103,10 @@ async function processJsonlFile(filePath, projectSlug, sessionsMap, bucketsMap, 
       session.cwd = event.cwd;
     }
 
-    let ts = null;
     if (event.timestamp) {
-      const parsed = Date.parse(event.timestamp);
-      if (!Number.isNaN(parsed)) {
-        ts = parsed;
-        if (session.lastActivity === null || ts > session.lastActivity) {
-          session.lastActivity = ts;
-        }
+      const ts = Date.parse(event.timestamp);
+      if (!Number.isNaN(ts) && (session.lastActivity === null || ts > session.lastActivity)) {
+        session.lastActivity = ts;
       }
     }
 
@@ -126,30 +115,12 @@ async function processJsonlFile(filePath, projectSlug, sessionsMap, bucketsMap, 
       const output = Number(usage.output_tokens) || 0;
       const cacheCreation = Number(usage.cache_creation_input_tokens) || 0;
       const cacheRead = Number(usage.cache_read_input_tokens) || 0;
-      const lineTotal = input + output + cacheCreation + cacheRead;
 
       session.input += input;
       session.output += output;
       session.cacheCreation += cacheCreation;
       session.cacheRead += cacheRead;
-      session.total += lineTotal;
-
-      // Recent-history timeline, used only to compute a locally-derived
-      // rolling-window usage estimate in the renderer (never an official
-      // Anthropic quota, which has no public API).
-      if (ts !== null && ts >= cutoffMs) {
-        const bucketKey = Math.floor(ts / TIMELINE_BUCKET_MS) * TIMELINE_BUCKET_MS;
-        let bucket = bucketsMap.get(bucketKey);
-        if (!bucket) {
-          bucket = { t: bucketKey, input: 0, output: 0, cacheCreation: 0, cacheRead: 0, total: 0 };
-          bucketsMap.set(bucketKey, bucket);
-        }
-        bucket.input += input;
-        bucket.output += output;
-        bucket.cacheCreation += cacheCreation;
-        bucket.cacheRead += cacheRead;
-        bucket.total += lineTotal;
-      }
+      session.total += input + output + cacheCreation + cacheRead;
     }
   }
 }
@@ -160,15 +131,13 @@ async function processJsonlFile(filePath, projectSlug, sessionsMap, bucketsMap, 
  */
 async function scanSessions() {
   const sessionsMap = new Map();
-  const bucketsMap = new Map();
-  const cutoffMs = Date.now() - TIMELINE_WINDOW_MS;
 
   let projectDirs = [];
   try {
     projectDirs = await fs.promises.readdir(CLAUDE_PROJECTS_DIR, { withFileTypes: true });
   } catch (err) {
     if (err.code === 'ENOENT') {
-      return { sessions: [], totals: emptyTotals(), timeline: [], scannedAt: Date.now() };
+      return { sessions: [], totals: emptyTotals(), scannedAt: Date.now() };
     }
     throw err;
   }
@@ -181,7 +150,7 @@ async function scanSessions() {
 
     for (const filePath of jsonlFiles) {
       try {
-        await processJsonlFile(filePath, projectSlug, sessionsMap, bucketsMap, cutoffMs);
+        await processJsonlFile(filePath, projectSlug, sessionsMap);
       } catch (err) {
         // Don't let one corrupt file abort the whole scan.
         console.error(`[claude-token-monitor] failed to read ${filePath}:`, err.message);
@@ -216,9 +185,7 @@ async function scanSessions() {
     emptyTotals()
   );
 
-  const timeline = Array.from(bucketsMap.values()).sort((a, b) => a.t - b.t);
-
-  return { sessions, totals, timeline, scannedAt: Date.now() };
+  return { sessions, totals, scannedAt: Date.now() };
 }
 
 function emptyTotals() {

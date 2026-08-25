@@ -6,7 +6,7 @@
   "private": true,
   "desktopName": "claude-token-monitor.desktop",
   "scripts": {
-    "postinstall": "node scripts/copy-chartjs.js",
+    "postinstall": "node scripts/copy-chartjs.js && node scripts/copy-fonts.js",
     "start": "electron .",
     "dist": "CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --linux --win",
     "dist:mac": "CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac",
@@ -20,6 +20,9 @@
     "electron-builder": "^26.15.3"
   },
   "dependencies": {
+    "@fontsource/fraunces": "^5.3.0",
+    "@fontsource/inter": "^5.3.0",
+    "@fontsource/jetbrains-mono": "^5.3.0",
     "chart.js": "^4.4.4"
   },
   "build": {
@@ -42,8 +45,20 @@
     "asar": true,
     "mac": {
       "target": [
-        { "target": "dmg", "arch": ["arm64", "x64"] },
-        { "target": "zip", "arch": ["arm64", "x64"] }
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
       ],
       "category": "public.app-category.developer-tools",
       "identity": null,
@@ -52,7 +67,12 @@
     },
     "win": {
       "target": [
-        { "target": "nsis", "arch": ["x64"] }
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
       ]
     },
     "nsis": {
@@ -61,7 +81,12 @@
     },
     "linux": {
       "target": [
-        { "target": "AppImage", "arch": ["x64"] }
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
       "category": "Development",
       "syncDesktopName": true
