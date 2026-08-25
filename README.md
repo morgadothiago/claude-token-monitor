@@ -177,6 +177,11 @@ externa.
   em runners nativos de cada SO (`macos-latest`, `ubuntu-latest`,
   `windows-latest` — sem gambiarra de cross-compile) e publica os artefatos
   direto na GitHub Release via `electron-builder --publish always`.
+- **`azure-pipelines.yml`** — alternativa equivalente pro Azure Pipelines,
+  mantida em paralelo. Minutos ilimitados em runner nativo dos 3 SOs pra
+  repositório público, útil se o GitHub Actions estiver indisponível por
+  qualquer motivo alheio ao código (ex: bloqueio de billing na conta) — o
+  push/release em si no GitHub não depende do Actions pra funcionar.
 
 ```bash
 git tag -a v1.2.0 -m "v1.2.0"

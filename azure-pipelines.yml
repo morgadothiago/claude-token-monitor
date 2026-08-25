@@ -1,0 +1,99 @@
+# Azure Pipelines - alternative to .github/workflows/release.yml, kept in
+# parallel in case GitHub Actions is unavailable (e.g. an account-level
+# billing lock unrelated to this repo's code). Free, unlimited minutes on
+# Microsoft-hosted agents for public repositories, natively covering macOS,
+# Windows and Linux - the same three targets electron-builder produces.
+#
+# Setup (one-time, in the Azure DevOps UI - not something committed here):
+#   1. https://dev.azure.com -> New project -> "GitHub" as the code source,
+#      pick morgadothiago/claude-token-monitor (installs the Azure Pipelines
+#      GitHub App, read-only on the repo - no push access needed).
+#   2. Project settings -> Pipelines -> Service connections is NOT needed
+#      for building; only for the publish step below you need a secret:
+#      Pipelines -> Library -> Variable group (or pipeline variable) named
+#      GH_TOKEN, secret, holding a GitHub Personal Access Token with
+#      "repo" scope (used only to upload release assets - GitHub Releases
+#      are unaffected by an Actions billing lock).
+#   3. New Pipeline -> Existing Azure Pipelines YAML file -> this file.
+#   4. Trigger a run manually, or push a `vX.Y.Z` tag - see the `trigger`
+#      section below.
+
+trigger:
+  tags:
+    include:
+      - "v*.*.*"
+  branches:
+    exclude:
+      - "*"
+
+pr: none
+
+jobs:
+  - job: test
+    displayName: "Unit tests"
+    pool:
+      vmImage: "ubuntu-latest"
+    steps:
+      - task: NodeTool@0
+        inputs:
+          versionSpec: "22.x"
+      - script: npm ci
+        displayName: "npm ci"
+      - script: npm test
+        displayName: "npm test"
+
+  - job: build_mac
+    displayName: "Build + publish (macOS)"
+    dependsOn: test
+    pool:
+      vmImage: "macOS-latest"
+    steps:
+      - task: NodeTool@0
+        inputs:
+          versionSpec: "22.x"
+      - script: npm ci
+        displayName: "npm ci"
+      - script: npx electron-builder --mac --publish always
+        displayName: "electron-builder --mac"
+        env:
+          GH_TOKEN: $(GH_TOKEN)
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+          # Once you have an Apple Developer ID Application certificate,
+          # add CSC_LINK / CSC_KEY_PASSWORD as secret pipeline variables and
+          # remove the CSC_IDENTITY_AUTO_DISCOVERY line above (see the same
+          # note in .github/workflows/release.yml).
+
+  - job: build_linux
+    displayName: "Build + publish (Linux)"
+    dependsOn: test
+    pool:
+      vmImage: "ubuntu-latest"
+    steps:
+      - task: NodeTool@0
+        inputs:
+          versionSpec: "22.x"
+      - script: npm ci
+        displayName: "npm ci"
+      - script: npx electron-builder --linux --publish always
+        displayName: "electron-builder --linux"
+        env:
+          GH_TOKEN: $(GH_TOKEN)
+
+  - job: build_windows
+    displayName: "Build + publish (Windows)"
+    dependsOn: test
+    pool:
+      vmImage: "windows-latest"
+    steps:
+      - task: NodeTool@0
+        inputs:
+          versionSpec: "22.x"
+      - script: npm ci
+        displayName: "npm ci"
+      - script: npx electron-builder --win --publish always
+        displayName: "electron-builder --win"
+        env:
+          GH_TOKEN: $(GH_TOKEN)
+          # Once you have a Windows code signing certificate, add
+          # CSC_LINK / CSC_KEY_PASSWORD as secret pipeline variables (same
+          # note as in .github/workflows/release.yml).
