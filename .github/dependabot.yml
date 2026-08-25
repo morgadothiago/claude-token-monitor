@@ -1,0 +1,21 @@
+version: 2
+updates:
+  # Electron ships Chromium - security patches land frequently. Without this,
+  # dependency versions only move when someone remembers to run `npm update`.
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      electron:
+        patterns:
+          - "electron*"
+      fontsource:
+        patterns:
+          - "@fontsource/*"
+    open-pull-requests-limit: 10
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

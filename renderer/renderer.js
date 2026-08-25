@@ -1,8 +1,29 @@
 'use strict';
 
-/* global Chart */
+/* global Chart, CTMLogic */
+
+// Wrapped in an IIFE so every top-level `const`/`function` here lives in its
+// own scope instead of the page's shared global scope - classic <script>
+// tags (no bundler/modules) all share one global lexical environment, so
+// without this a name here could collide with one declared in logic.js
+// (which does need to expose its globals, via window.CTMLogic).
+(function () {
+
+const {
+  formatNumber,
+  formatDate,
+  shortId,
+  escapeHtml,
+  computeTotals,
+  aggregateByProject,
+  filterByPeriod,
+  textFilterSessions,
+  sortSessions,
+  percentage,
+} = CTMLogic;
 
 const TOP_N_PROJECTS = 8;
+const TABLE_PAGE_SIZE = 50;
 
 const PIE_COLORS = [
   '#7c9cff', '#4fd1c5', '#f6ad55', '#b794f4',
@@ -30,83 +51,17 @@ let state = {
   sortDir: 'desc',
   filterText: '',
   period: 'all',
+  tableVisibleCount: TABLE_PAGE_SIZE,
 };
-
-const PERIOD_MS = {
-  '24h': 24 * 60 * 60 * 1000,
-  '7d': 7 * 24 * 60 * 60 * 1000,
-  '30d': 30 * 24 * 60 * 60 * 1000,
-};
-
-// Sessions whose last activity falls inside the currently selected period.
-// This is what "current projects" means in the UI: filtering by this scopes
-// every card, chart and table row to only the work happening in that window.
-function getVisibleSessions() {
-  const { period, sessions } = state;
-  if (period === 'all') return sessions;
-
-  const now = Date.now();
-
-  if (period === 'today') {
-    const startOfToday = new Date();
-    startOfToday.setHours(0, 0, 0, 0);
-    const cutoff = startOfToday.getTime();
-    return sessions.filter((s) => s.lastActivity && s.lastActivity >= cutoff);
-  }
-
-  const windowMs = PERIOD_MS[period];
-  if (!windowMs) return sessions;
-  const cutoff = now - windowMs;
-  return sessions.filter((s) => s.lastActivity && s.lastActivity >= cutoff);
-}
-
-function computeTotals(sessions) {
-  return sessions.reduce(
-    (acc, s) => {
-      acc.input += s.input;
-      acc.output += s.output;
-      acc.cacheCreation += s.cacheCreation;
-      acc.cacheRead += s.cacheRead;
-      acc.total += s.total;
-      return acc;
-    },
-    { input: 0, output: 0, cacheCreation: 0, cacheRead: 0, total: 0 }
-  );
-}
 
 let sessionsChart = null;
 let categoriesChart = null;
 
-// ---------- Formatting helpers ----------
-
-function formatNumber(n) {
-  if (n === null || n === undefined || Number.isNaN(n)) return '-';
-  const abs = Math.abs(n);
-  if (abs >= 1_000_000_000) return trimZero(n / 1_000_000_000) + 'B';
-  if (abs >= 1_000_000) return trimZero(n / 1_000_000) + 'M';
-  if (abs >= 1_000) return trimZero(n / 1_000) + 'K';
-  return String(n);
-}
-
-function trimZero(n) {
-  return n.toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1');
-}
-
-function formatDate(ts) {
-  if (!ts) return '-';
-  const d = new Date(ts);
-  return d.toLocaleString('pt-BR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
-
-function shortId(uuid) {
-  if (!uuid) return '-';
-  return uuid.slice(0, 8);
+// Sessions matching the currently selected period. This is what "current
+// projects" means in the UI: filtering by this scopes every card, chart and
+// table row to only the work happening in that window.
+function getVisibleSessions() {
+  return filterByPeriod(state.sessions, state.period, Date.now());
 }
 
 // ---------- Data loading ----------
@@ -116,6 +71,7 @@ async function loadData() {
   try {
     const result = await window.tokenMonitorAPI.scanSessions();
     state.sessions = result.sessions;
+    state.tableVisibleCount = TABLE_PAGE_SIZE;
     renderAll(result.scannedAt);
   } catch (err) {
     console.error('Failed to scan sessions:', err);
@@ -153,44 +109,6 @@ function renderSummaryCards() {
   const uniqueProjects = new Set(sessions.map((s) => s.projectName || s.cwd || 'desconhecido'));
   document.getElementById('summary-projects').textContent = String(uniqueProjects.size);
   document.getElementById('summary-cache-read').textContent = formatNumber(totals.cacheRead);
-}
-
-// Groups sessions by project (cwd wins as the dedup key when present, since
-// two different paths can share a folder basename) so every current project
-// always shows up as its own slice/row instead of fragmenting into one
-// sliver per session or getting buried inside "Outras".
-function aggregateByProject(sessions) {
-  const map = new Map();
-
-  for (const s of sessions) {
-    const key = s.cwd || `name:${s.projectName}`;
-    let proj = map.get(key);
-    if (!proj) {
-      proj = {
-        projectName: s.projectName,
-        cwd: s.cwd,
-        sessionCount: 0,
-        lastActivity: null,
-        input: 0,
-        output: 0,
-        cacheCreation: 0,
-        cacheRead: 0,
-        total: 0,
-      };
-      map.set(key, proj);
-    }
-    proj.sessionCount += 1;
-    proj.input += s.input;
-    proj.output += s.output;
-    proj.cacheCreation += s.cacheCreation;
-    proj.cacheRead += s.cacheRead;
-    proj.total += s.total;
-    if (s.lastActivity && (proj.lastActivity === null || s.lastActivity > proj.lastActivity)) {
-      proj.lastActivity = s.lastActivity;
-    }
-  }
-
-  return Array.from(map.values()).sort((a, b) => b.total - a.total);
 }
 
 function renderSessionsChart() {
@@ -259,11 +177,6 @@ function renderCategoriesChart() {
     sub: `${formatNumber(totals[k])} tokens (${percentage(totals[k], totals.total)}%)`,
   }));
   renderLegend(legendEl, legendItems);
-}
-
-function percentage(part, total) {
-  if (!total) return '0';
-  return ((part / total) * 100).toFixed(1);
 }
 
 function upsertPieChart(canvas, existingChart, labels, values, colors) {
@@ -346,42 +259,23 @@ function renderLegend(container, items) {
 }
 
 // ---------- Table ----------
+//
+// Rendered incrementally (page size TABLE_PAGE_SIZE) instead of all at once.
+// With a couple dozen sessions this would never matter, but someone who
+// runs Claude Code daily for a couple of years can accumulate thousands of
+// session files - creating one <tr> per row up front would start to make
+// sorting/filtering visibly janky well before that.
 
 function getFilteredSortedSessions() {
-  const filter = state.filterText.trim().toLowerCase();
-  let list = getVisibleSessions();
-
-  if (filter) {
-    list = list.filter((s) => {
-      const haystack = `${s.projectName} ${s.sessionId} ${s.cwd || ''}`.toLowerCase();
-      return haystack.includes(filter);
-    });
-  }
-
-  const { sortKey, sortDir } = state;
-  const dirMultiplier = sortDir === 'asc' ? 1 : -1;
-
-  list = [...list].sort((a, b) => {
-    let va = a[sortKey];
-    let vb = b[sortKey];
-    if (typeof va === 'string' || typeof vb === 'string') {
-      va = (va || '').toString().toLowerCase();
-      vb = (vb || '').toString().toLowerCase();
-      if (va < vb) return -1 * dirMultiplier;
-      if (va > vb) return 1 * dirMultiplier;
-      return 0;
-    }
-    va = va || 0;
-    vb = vb || 0;
-    return (va - vb) * dirMultiplier;
-  });
-
-  return list;
+  const withPeriod = getVisibleSessions();
+  const withText = textFilterSessions(withPeriod, state.filterText);
+  return sortSessions(withText, state.sortKey, state.sortDir);
 }
 
 function renderTable() {
   const tbody = document.getElementById('sessions-tbody');
   const emptyState = document.getElementById('empty-state');
+  const loadMoreWrap = document.getElementById('table-load-more-wrap');
   const list = getFilteredSortedSessions();
 
   tbody.innerHTML = '';
@@ -391,13 +285,16 @@ function renderTable() {
       ? 'Nenhuma sessão no período/filtro selecionado.'
       : 'Nenhuma sessão encontrada em ~/.claude/projects.';
     emptyState.hidden = false;
+    loadMoreWrap.hidden = true;
     updateSortHeaders();
     return;
   }
   emptyState.hidden = true;
 
+  const visible = list.slice(0, state.tableVisibleCount);
+
   const fragment = document.createDocumentFragment();
-  for (const s of list) {
+  for (const s of visible) {
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td>
@@ -418,6 +315,15 @@ function renderTable() {
   }
   tbody.appendChild(fragment);
 
+  const remaining = list.length - visible.length;
+  const loadMoreBtn = document.getElementById('table-load-more');
+  if (remaining > 0) {
+    loadMoreWrap.hidden = false;
+    loadMoreBtn.textContent = `Carregar mais (${formatNumber(remaining)} restantes)`;
+  } else {
+    loadMoreWrap.hidden = true;
+  }
+
   updateSortHeaders();
 }
 
@@ -431,12 +337,6 @@ function updateSortHeaders() {
   });
 }
 
-function escapeHtml(str) {
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
-}
-
 // ---------- Event wiring ----------
 
 function wireEvents() {
@@ -446,6 +346,12 @@ function wireEvents() {
 
   document.getElementById('table-filter').addEventListener('input', (e) => {
     state.filterText = e.target.value;
+    state.tableVisibleCount = TABLE_PAGE_SIZE;
+    renderTable();
+  });
+
+  document.getElementById('table-load-more').addEventListener('click', () => {
+    state.tableVisibleCount += TABLE_PAGE_SIZE;
     renderTable();
   });
 
@@ -458,6 +364,7 @@ function wireEvents() {
         state.sortKey = key;
         state.sortDir = 'desc';
       }
+      state.tableVisibleCount = TABLE_PAGE_SIZE;
       renderTable();
     });
   });
@@ -465,6 +372,7 @@ function wireEvents() {
   document.querySelectorAll('.period-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
       state.period = btn.dataset.period;
+      state.tableVisibleCount = TABLE_PAGE_SIZE;
       document.querySelectorAll('.period-btn').forEach((b) => {
         b.classList.toggle('is-active', b === btn);
       });
@@ -478,3 +386,5 @@ function wireEvents() {
 
 wireEvents();
 loadData();
+
+})();

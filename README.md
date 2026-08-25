@@ -11,6 +11,8 @@ saindo da máquina.
 
 **Download**: [última release](https://github.com/morgadothiago/claude-token-monitor/releases/latest) (macOS, Windows, Linux)
 
+![Screenshot do Claude Token Monitor](docs/screenshot.png)
+
 ---
 
 ## O problema que resolve
@@ -62,15 +64,23 @@ foco é 100% visualização de consumo histórico real.
                                                               └──────────────────────┘
 ```
 
-- **`main.js`** — bootstrap do Electron (janela, IPC, auto-update, logging).
-  Não contém lógica de negócio.
+- **`main.js`** — bootstrap do Electron (janela, single-instance lock,
+  persistência de bounds, IPC, auto-update, logging). Não contém lógica de
+  negócio.
 - **`lib/scanner.js`** — toda a lógica de varredura/agregação, deliberadamente
   **sem importar `electron`**, pra poder rodar em testes unitários puros com
   `node --test`, sem precisar subir um `BrowserWindow`.
+- **`lib/windowState.js`** — persistência de tamanho/posição da janela em
+  disco (JSON simples, sem depender de `electron-store`), também livre de
+  `electron` e testável isoladamente.
 - **`preload.js`** — única porta de entrada do renderer pro mundo Node/Electron,
   expõe uma função (`scanSessions`), nada mais.
-- **`renderer/`** — HTML/CSS/JS vanilla, consome a API exposta pelo preload via
-  `window.tokenMonitorAPI`.
+- **`renderer/logic.js`** — formatação, filtro, ordenação e agregação usados
+  pela UI: funções puras, sem tocar no DOM. Carregado como `<script>` comum
+  no browser (expõe `window.CTMLogic`) e também via `require()` direto nos
+  testes — mesmo arquivo, sem bundler, sem duplicar lógica.
+- **`renderer/renderer.js`** — o único arquivo com DOM/eventos/Chart.js;
+  consome `CTMLogic` e a API exposta pelo preload via `window.tokenMonitorAPI`.
 
 ## Decisões de engenharia
 
@@ -107,20 +117,34 @@ real.
 
 ### Testabilidade
 
-A lógica de agregação (a parte que realmente importa acertar — é puro
-cálculo sobre dados sensíveis a erro de arredondamento/duplicação) foi
-extraída pra `lib/scanner.js`, sem nenhuma dependência do Electron. Isso
-permite testar com `node --test` puro, incluindo:
+Tanto a lógica do main process (`lib/scanner.js`, `lib/windowState.js`)
+quanto a lógica de UI (`renderer/logic.js`) são deliberadamente livres de
+`electron`/DOM, então rodam em testes unitários puros com `node --test` —
+sem precisar subir um `BrowserWindow` nem simular um DOM (jsdom). 32 testes
+no total, cobrindo:
 
 - parsing de linha NDJSON malformada sem derrubar o scan inteiro;
 - soma de categorias de token com campos ausentes;
-- agregação e ordenação por sessão;
+- agregação por projeto e por sessão, ordenação, filtro por período/texto;
+- persistência de bounds da janela (round-trip, arquivo corrompido, valores
+  absurdos);
 - um teste de integração real, criando arquivos `.jsonl` temporários em
   disco e rodando o `scanSessions()` fim a fim.
 
 ```bash
 npm test
 ```
+
+### Outros detalhes de robustez
+
+- **Single-instance lock** (`app.requestSingleInstanceLock()`) — abrir o app
+  de novo só foca a janela existente, em vez de subir uma segunda instância
+  escaneando os mesmos arquivos em paralelo.
+- **Tamanho/posição da janela persistidos** entre execuções (`lib/windowState.js`).
+- **Tabela renderizada incrementalmente** (`TABLE_PAGE_SIZE = 50` +
+  botão "Carregar mais") em vez de criar uma `<tr>` por sessão de uma vez só
+  — importa pouco com dezenas de sessões, mas evita degradação num histórico
+  de anos de uso.
 
 ## Rodar localmente
 
