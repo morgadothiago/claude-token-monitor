@@ -1,0 +1,68 @@
+name: Release
+
+# Builds on each OS's own native runner (no wine/dpkg workarounds needed,
+# unlike building all three targets from a single Mac locally) and publishes
+# the installers straight to the GitHub Release created for the pushed tag.
+#
+# Trigger: push a tag like `v1.2.0` (must match the version in package.json).
+#   git tag -a v1.2.0 -m "v1.2.0"
+#   git push origin v1.2.0
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npm test
+
+      - name: Build and publish (macOS)
+        if: matrix.os == 'macos-latest'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+          # Once you buy an Apple Developer ID Application certificate:
+          # 1. Export it as a .p12, base64-encode it, store as repo secret CSC_LINK
+          # 2. Store its password as repo secret CSC_KEY_PASSWORD
+          # 3. Remove the CSC_IDENTITY_AUTO_DISCOVERY line above and the
+          #    `"identity": null` / `"hardenedRuntime": false` overrides in
+          #    package.json's build.mac config, then add notarization
+          #    (electron-builder's afterSign hook + APPLE_ID/APPLE_APP_SPECIFIC_PASSWORD).
+          # CSC_LINK: ${{ secrets.CSC_LINK }}
+          # CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+        run: npx electron-builder --mac --publish always
+
+      - name: Build and publish (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --linux --publish always
+
+      - name: Build and publish (Windows)
+        if: matrix.os == 'windows-latest'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Once you buy a code signing certificate (EV recommended so
+          # SmartScreen doesn't need to "warm up" a reputation):
+          # 1. Store the .pfx base64-encoded as repo secret WIN_CSC_LINK
+          # 2. Store its password as repo secret WIN_CSC_KEY_PASSWORD
+          # CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          # CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+        run: npx electron-builder --win --publish always

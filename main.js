@@ -3,194 +3,19 @@
 const { app, BrowserWindow, ipcMain, shell } = require('electron');
 const path = require('path');
 const os = require('os');
-const fs = require('fs');
-const readline = require('readline');
+const log = require('electron-log');
+const { autoUpdater } = require('electron-updater');
+const { scanSessions } = require('./lib/scanner');
 
 const CLAUDE_PROJECTS_DIR = path.join(os.homedir(), '.claude', 'projects');
 
-/**
- * Recursively lists all .jsonl files under a directory.
- * Uses async fs to avoid blocking the main process on large trees.
- */
-async function findJsonlFiles(dir) {
-  const results = [];
-  let entries;
-  try {
-    entries = await fs.promises.readdir(dir, { withFileTypes: true });
-  } catch (err) {
-    if (err.code === 'ENOENT') return results;
-    throw err;
-  }
-
-  for (const entry of entries) {
-    const fullPath = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      const nested = await findJsonlFiles(fullPath);
-      results.push(...nested);
-    } else if (entry.isFile() && entry.name.endsWith('.jsonl')) {
-      results.push(fullPath);
-    }
-  }
-  return results;
-}
-
-/**
- * Derives a human-readable project name from a project slug directory name.
- * Claude Code stores project dirs as "-Users-name-Desktop-my-project" which
- * roughly mirrors the original absolute path with slashes swapped for dashes.
- * This is a best-effort fallback used only when `cwd` was never seen in the
- * session's JSONL lines.
- */
-function projectNameFromSlug(slug) {
-  const parts = slug.split('-').filter(Boolean);
-  return parts.length ? parts[parts.length - 1] : slug;
-}
-
-/**
- * Derives a human-readable project name from an absolute cwd path.
- */
-function projectNameFromCwd(cwd) {
-  if (!cwd) return null;
-  const normalized = cwd.replace(/[\\/]+$/, '');
-  const base = path.basename(normalized);
-  return base || normalized;
-}
-
-/**
- * Streams a single .jsonl file line by line (NDJSON), accumulating token
- * usage into the sessions map. Malformed lines are skipped silently since
- * Claude Code session files can contain partial/truncated trailing lines.
- */
-async function processJsonlFile(filePath, projectSlug, sessionsMap) {
-  const fileStream = fs.createReadStream(filePath, { encoding: 'utf8' });
-  const rl = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
-
-  // Fallback sessionId derived from the file name (session-uuid.jsonl) in
-  // case a line is missing the sessionId field.
-  const fallbackSessionId = path.basename(filePath, '.jsonl');
-
-  for await (const rawLine of rl) {
-    const line = rawLine.trim();
-    if (!line) continue;
-
-    let event;
-    try {
-      event = JSON.parse(line);
-    } catch {
-      continue; // skip malformed / truncated lines
-    }
-
-    const sessionId = event.sessionId || fallbackSessionId;
-    const usage = event.message && event.message.usage;
-
-    let session = sessionsMap.get(sessionId);
-    if (!session) {
-      session = {
-        sessionId,
-        cwd: null,
-        projectSlug,
-        lastActivity: null,
-        input: 0,
-        output: 0,
-        cacheCreation: 0,
-        cacheRead: 0,
-        total: 0,
-      };
-      sessionsMap.set(sessionId, session);
-    }
-
-    if (event.cwd && !session.cwd) {
-      session.cwd = event.cwd;
-    }
-
-    if (event.timestamp) {
-      const ts = Date.parse(event.timestamp);
-      if (!Number.isNaN(ts) && (session.lastActivity === null || ts > session.lastActivity)) {
-        session.lastActivity = ts;
-      }
-    }
-
-    if (usage) {
-      const input = Number(usage.input_tokens) || 0;
-      const output = Number(usage.output_tokens) || 0;
-      const cacheCreation = Number(usage.cache_creation_input_tokens) || 0;
-      const cacheRead = Number(usage.cache_read_input_tokens) || 0;
-
-      session.input += input;
-      session.output += output;
-      session.cacheCreation += cacheCreation;
-      session.cacheRead += cacheRead;
-      session.total += input + output + cacheCreation + cacheRead;
-    }
-  }
-}
-
-/**
- * Scans ~/.claude/projects for all session JSONL files and aggregates
- * token usage per session.
- */
-async function scanSessions() {
-  const sessionsMap = new Map();
-
-  let projectDirs = [];
-  try {
-    projectDirs = await fs.promises.readdir(CLAUDE_PROJECTS_DIR, { withFileTypes: true });
-  } catch (err) {
-    if (err.code === 'ENOENT') {
-      return { sessions: [], totals: emptyTotals(), scannedAt: Date.now() };
-    }
-    throw err;
-  }
-
-  for (const dirEntry of projectDirs) {
-    if (!dirEntry.isDirectory()) continue;
-    const projectSlug = dirEntry.name;
-    const projectDirPath = path.join(CLAUDE_PROJECTS_DIR, projectSlug);
-    const jsonlFiles = await findJsonlFiles(projectDirPath);
-
-    for (const filePath of jsonlFiles) {
-      try {
-        await processJsonlFile(filePath, projectSlug, sessionsMap);
-      } catch (err) {
-        // Don't let one corrupt file abort the whole scan.
-        console.error(`[claude-token-monitor] failed to read ${filePath}:`, err.message);
-      }
-    }
-  }
-
-  const sessions = Array.from(sessionsMap.values())
-    .filter((s) => s.total > 0)
-    .map((s) => ({
-      sessionId: s.sessionId,
-      cwd: s.cwd,
-      projectName: projectNameFromCwd(s.cwd) || projectNameFromSlug(s.projectSlug),
-      lastActivity: s.lastActivity,
-      input: s.input,
-      output: s.output,
-      cacheCreation: s.cacheCreation,
-      cacheRead: s.cacheRead,
-      total: s.total,
-    }))
-    .sort((a, b) => b.total - a.total);
-
-  const totals = sessions.reduce(
-    (acc, s) => {
-      acc.input += s.input;
-      acc.output += s.output;
-      acc.cacheCreation += s.cacheCreation;
-      acc.cacheRead += s.cacheRead;
-      acc.total += s.total;
-      return acc;
-    },
-    emptyTotals()
-  );
-
-  return { sessions, totals, scannedAt: Date.now() };
-}
-
-function emptyTotals() {
-  return { input: 0, output: 0, cacheCreation: 0, cacheRead: 0, total: 0 };
-}
+// electron-log writes to a local file per OS (~/Library/Logs on macOS,
+// %USERPROFILE%\AppData\Roaming on Windows, ~/.config on Linux) - purely
+// local, nothing is ever sent anywhere. Useful for debugging a report from
+// a user without asking them to run the app from a terminal.
+Object.assign(console, log.functions);
+log.errorHandler.startCatching();
+autoUpdater.logger = log;
 
 let mainWindow = null;
 
@@ -224,7 +49,7 @@ function createWindow() {
 
 app.whenReady().then(() => {
   ipcMain.handle('tokens:scan', async () => {
-    return scanSessions();
+    return scanSessions(CLAUDE_PROJECTS_DIR);
   });
 
   createWindow();
@@ -232,6 +57,22 @@ app.whenReady().then(() => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
+
+  // Auto-update via GitHub Releases (see build.publish in package.json).
+  // Only meaningful in a packaged build - electron-updater is a no-op (and
+  // noisy in the log) when running unpackaged with `electron .`. This is
+  // fire-and-forget: errors are logged locally, never surfaced as a crash.
+  //
+  // Known limitation: on macOS, Squirrel.Mac (which electron-updater relies
+  // on) requires the app to be codesigned with a Developer ID certificate -
+  // without one, the check succeeds but the actual update install step will
+  // fail. Windows/Linux auto-update work fine unsigned, just with the usual
+  // "unknown publisher" warning on first run.
+  if (app.isPackaged) {
+    autoUpdater.checkForUpdatesAndNotify().catch((err) => {
+      log.warn('[auto-update] check failed (non-fatal):', err.message);
+    });
+  }
 });
 
 app.on('window-all-closed', () => {

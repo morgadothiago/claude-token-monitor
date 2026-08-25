@@ -1,19 +1,29 @@
 {
   "name": "claude-token-monitor",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Monitor de consumo de tokens das sessões do Claude Code, com graficos de pizza por sessao e por categoria de token.",
   "main": "main.js",
   "private": true,
   "desktopName": "claude-token-monitor.desktop",
+  "homepage": "https://github.com/morgadothiago/claude-token-monitor",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/morgadothiago/claude-token-monitor.git"
+  },
+  "bugs": {
+    "url": "https://github.com/morgadothiago/claude-token-monitor/issues"
+  },
   "scripts": {
     "postinstall": "node scripts/copy-chartjs.js && node scripts/copy-fonts.js",
     "start": "electron .",
+    "test": "node --test test/**/*.test.js",
     "dist": "CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --linux --win",
     "dist:mac": "CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac",
     "dist:linux": "electron-builder --linux",
-    "dist:win": "electron-builder --win"
+    "dist:win": "electron-builder --win",
+    "dist:publish": "CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --linux --win --publish always"
   },
-  "author": "",
+  "author": "Thiago Morgado",
   "license": "MIT",
   "devDependencies": {
     "electron": "^33.0.0",
@@ -23,7 +33,9 @@
     "@fontsource/fraunces": "^5.3.0",
     "@fontsource/inter": "^5.3.0",
     "@fontsource/jetbrains-mono": "^5.3.0",
-    "chart.js": "^4.4.4"
+    "chart.js": "^4.4.4",
+    "electron-log": "^5.4.4",
+    "electron-updater": "^6.8.9"
   },
   "build": {
     "appId": "com.thiagomorgado.claudetokenmonitor",
@@ -31,6 +43,11 @@
     "directories": {
       "output": "dist",
       "buildResources": "build"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "morgadothiago",
+      "repo": "claude-token-monitor"
     },
     "files": [
       "main.js",
